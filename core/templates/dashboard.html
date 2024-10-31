@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home Control Panel</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        // Polling intervals (in milliseconds)
+        const SENSOR_INTERVAL = 2000;  // Poll sensors every 2 seconds
+        const LIGHT_INTERVAL = 1000;   // Poll light status every 1 second
+        const DOOR_INTERVAL = 1000;    // Poll door status every 1 second
+
+        // Animation utilities
+        function pulseElement(elementId) {
+            const element = document.getElementById(elementId);
+            element.style.transition = 'transform 0.2s ease-in-out';
+            element.style.transform = 'scale(1.05)';
+            setTimeout(() => {
+                element.style.transform = 'scale(1)';
+            }, 200);
+        }
+
+        // Real-time door status updates
+        async function fetchDoorStatus() {
+            try {
+                const response = await fetch("/door-status/");
+                const data = await response.json();
+                const statusElement = document.getElementById("door-status");
+                if (statusElement.innerText !== "Door is " + data.status) {
+                    statusElement.innerText = "Door is " + data.status;
+                    pulseElement("door-card");
+                }
+            } catch (error) {
+                console.error("Door status fetch failed:", error);
+            }
+        }
+
+        // Real-time light status updates
+        async function fetchLightStatus() {
+            try {
+                const response = await fetch("/light-control/");
+                const data = await response.json();
+                const statusElement = document.getElementById("light-status");
+                const newStatus = `Indoor Light: ${data.current_status.indoor}, Outdoor Light: ${data.current_status.outdoor}`;
+
+                if (statusElement.innerText !== newStatus) {
+                    statusElement.innerText = newStatus;
+                    pulseElement("light-card");
+
+                    // Update button states
+                    updateLightButtons('indoor', data.current_status.indoor);
+                    updateLightButtons('outdoor', data.current_status.outdoor);
+                }
+            } catch (error) {
+                console.error("Light status fetch failed:", error);
+            }
+        }
+
+        function updateLightButtons(location, status) {
+            const onButton = document.getElementById(`${location}-on`);
+            const offButton = document.getElementById(`${location}-off`);
+
+            if (status === 'on') {
+                onButton.style.backgroundColor = '#28a745';
+                offButton.style.backgroundColor = '#1a4ba1';
+            } else {
+                onButton.style.backgroundColor = '#1a4ba1';
+                offButton.style.backgroundColor = '#dc3545';
+            }
+        }
+
+        // Real-time sensor data updates
+        async function fetchSensorData() {
+            try {
+                const response = await fetch("/sensor-data/");
+                if (!response.ok) {
+                    throw new Error("Network response was not ok");
+                }
+                const data = await response.json();
+
+                // Update temperature with animation if changed
+                const tempElement = document.getElementById("temperature");
+                if (tempElement.innerText !== `${data.temperature}°C`) {
+                    tempElement.innerText = `${data.temperature}°C`;
+                    pulseElement("temp-card");
+                }
+
+                // Update humidity with animation if changed
+                const humidElement = document.getElementById("humidity");
+                if (humidElement.innerText !== `${data.humidity}%`) {
+                    humidElement.innerText = `${data.humidity}%`;
+                    pulseElement("humidity-card");
+                }
+            } catch (error) {
+                console.error("Failed to fetch sensor data:", error);
+            }
+        }
+
+        // Control functions
+        async function controlDoor(action) {
+            try {
+                const response = await fetch("/door-status/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: action })
+                });
+                if (response.ok) {
+                    fetchDoorStatus();
+                }
+            } catch (error) {
+                console.error("Door control failed:", error);
+            }
+        }
+
+        function toggleLight(location, action) {
+            fetch('/light-control/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ [location]: action })
+            }).then(response => {
+                if (response.ok) {
+                    fetchLightStatus();
+                }
+            }).catch(error => {
+                console.error("Light control failed:", error);
+            });
+        }
+
+        // Initialize all real-time updates
+        function initializeRealTimeUpdates() {
+            // Initial fetches
+            fetchDoorStatus();
+            fetchLightStatus();
+            fetchSensorData();
+
+            // Set up polling intervals
+            setInterval(fetchDoorStatus, DOOR_INTERVAL);
+            setInterval(fetchLightStatus, LIGHT_INTERVAL);
+            setInterval(fetchSensorData, SENSOR_INTERVAL);
+
+            // Set up doorbell checking
+            checkDoorbell();
+        }
+
+        // Doorbell notification checker
+          async function checkDoorbell() {
+        try {
+            const response = await fetch("/doorbell/");
+            const data = await response.json();
+            if (data.notification) {
+                showNotification(data.notification);
+            }
+        } catch (error) {
+            console.error("Failed to check doorbell:", error);
+        }
+    }
+
+       function showNotification(message) {
+        const notification = document.createElement('div');
+        notification.style.position = 'fixed';
+        notification.style.top = '20px';
+        notification.style.right = '20px';
+        notification.style.backgroundColor = '#1a4ba1';
+        notification.style.color = 'white';
+        notification.style.padding = '15px';
+        notification.style.borderRadius = '5px';
+        notification.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+        notification.style.zIndex = '1000';
+        notification.innerHTML = `<i class="fas fa-bell"></i> ${message}`;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.transition = 'opacity 0.5s ease-out';
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 500);
+        }, 5000);
+    }
+
+          async function checkDoorStatus() {
+        try {
+            const response = await fetch("/door-status/");
+            const data = await response.json();
+            if (data.notification) {
+                showNotification(data.notification);
+            }
+        } catch (error) {
+            console.error("Failed to check door status:", error);
+        }
+    }
+
+    // Call these functions at regular intervals or on certain user actions
+    setInterval(checkDoorbell, 5000);  // Check every 5 seconds
+    setInterval(checkDoorStatus, 5000);
+
+        // Initialize everything when the page loads
+        window.onload = initializeRealTimeUpdates;
+    </script>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f5ff;">
+    <div style="background-color: #1a4ba1; color: white; padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <h1 style="margin: 0; font-size: 2em;">Smart Home Control Panel</h1>
+    </div>
+
+    <div style="max-width: 1200px; margin: 20px auto; padding: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+
+        <!-- Door Control Card -->
+        <div id="door-card" style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s ease-in-out;">
+            <h2 style="color: #1a4ba1; margin-top: 0;"><i class="fas fa-door-open"></i> Door Control</h2>
+            <p id="door-status" style="font-size: 1.2em; color: #444;">Door is loading...</p>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="controlDoor('open')" style="background-color: #1a4ba1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; flex: 1; transition: all 0.3s;">
+                    <i class="fas fa-lock-open"></i> Open
+                </button>
+                <button onclick="controlDoor('closed')" style="background-color: #1a4ba1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; flex: 1; transition: all 0.3s;">
+                    <i class="fas fa-lock"></i> Close
+                </button>
+            </div>
+        </div>
+
+        <!-- Light Control Card -->
+        <div id="light-card" style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s ease-in-out;">
+            <h2 style="color: #1a4ba1; margin-top: 0;"><i class="fas fa-lightbulb"></i> Light Control</h2>
+            <p id="light-status" style="font-size: 1.2em; color: #444;">Light status loading...</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button id="indoor-on" onclick="toggleLight('indoor', 'on')" style="background-color: #1a4ba1; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; transition: all 0.3s;">
+                    <i class="fas fa-home"></i> Indoor On
+                </button>
+                <button id="indoor-off" onclick="toggleLight('indoor', 'off')" style="background-color: #dc3545; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; transition: all 0.3s;">
+                    Indoor Off
+                </button>
+                <button id="outdoor-on" onclick="toggleLight('outdoor', 'on')" style="background-color: #1a4ba1; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; transition: all 0.3s;">
+                    <i class="fas fa-tree"></i> Outdoor On
+                </button>
+                <button id="outdoor-off" onclick="toggleLight('outdoor', 'off')" style="background-color: #dc3545; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; transition: all 0.3s;">
+                    Outdoor Off
+                </button>
+            </div>
+        </div>
+
+        <!-- Sensor Readings Card -->
+        <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h2 style="color: #1a4ba1; margin-top: 0;"><i class="fas fa-thermometer-half"></i> Sensor Readings</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div id="temp-card" style="text-align: center; padding: 15px; background-color: #f8f9fa; border-radius: 5px; transition: transform 0.2s ease-in-out;">
+                    <i class="fas fa-temperature-high" style="font-size: 2em; color: #1a4ba1;"></i>
+                    <p style="margin: 10px 0; color: #666;">Temperature</p>
+                    <p id="temperature" style="font-size: 1.5em; margin: 0; color: #1a4ba1;">Loading...</p>
+                </div>
+                <div id="humidity-card" style="text-align: center; padding: 15px; background-color: #f8f9fa; border-radius: 5px; transition: transform 0.2s ease-in-out;">
+                    <i class="fas fa-tint" style="font-size: 2em; color: #1a4ba1;"></i>
+                    <p style="margin: 10px 0; color: #666;">Humidity</p>
+                    <p id="humidity" style="font-size: 1.5em; margin: 0; color: #1a4ba1;">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
